@@ -7,6 +7,8 @@ export interface IClassSubjectMapping extends Document {
   isMandatory: boolean
   periodsPerWeek: number
   teachers?: mongoose.Types.ObjectId[]
+  isDeleted: boolean
+  deletedAt: Date | null
 }
 
 const classSubjectMappingSchema = new Schema<IClassSubjectMapping>(
@@ -15,8 +17,10 @@ const classSubjectMappingSchema = new Schema<IClassSubjectMapping>(
     classId: { type: Schema.Types.ObjectId, ref: 'ClassMaster', required: true },
     subjectId: { type: Schema.Types.ObjectId, ref: 'SubjectMaster', required: true },
     isMandatory: { type: Boolean, default: true },
-    periodsPerWeek: { type: Number, required: true },
-    teachers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+    periodsPerWeek: { type: Number, required: true, min: 1, max: 60 },
+    teachers: [{ type: Schema.Types.ObjectId, ref: 'Teacher' }],
+    isDeleted: { type: Boolean, default: false },
+    deletedAt: { type: Date, default: null },
   },
   { timestamps: true }
 )

@@ -20,6 +20,8 @@ export interface IClassMaster extends Document {
   maxAge?: number
   sections: ISection[]
   isActive: boolean
+  isDeleted: boolean
+  deletedAt: Date | null
   createdAt: Date
   updatedAt: Date
 }
@@ -28,7 +30,7 @@ const sectionSchema = new Schema<ISection>(
   {
     sectionName: { type: String, required: true },
     capacity: { type: Number, required: true, min: 1 },
-    classTeacher: { type: Schema.Types.ObjectId, ref: 'User' },
+    classTeacher: { type: Schema.Types.ObjectId, ref: 'Teacher' },
   },
   { _id: false }
 )
@@ -48,6 +50,8 @@ const classMasterSchema = new Schema<IClassMaster>(
     maxAge: { type: Number },
     sections: { type: [sectionSchema], default: [] },
     isActive: { type: Boolean, default: true },
+    isDeleted: { type: Boolean, default: false },
+    deletedAt: { type: Date, default: null },
   },
   { timestamps: true }
 )
