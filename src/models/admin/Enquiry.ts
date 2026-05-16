@@ -5,6 +5,7 @@ export interface IEnquiry extends Document {
   phone: string
   email?: string
   classInterestedIn: mongoose.Types.ObjectId
+  applicationId?: mongoose.Types.ObjectId
   leadSource: 'Website' | 'Facebook' | 'Walk-in' | 'Phone' | 'Other'
   followUpDate?: Date
   status: 'New' | 'Contacted' | 'Converted' | 'Dead'
@@ -18,6 +19,7 @@ const EnquirySchema = new Schema<IEnquiry>(
     phone: { type: String, required: true },
     email: { type: String },
     classInterestedIn: { type: Schema.Types.ObjectId, ref: 'ClassMaster', required: true },
+    applicationId: { type: Schema.Types.ObjectId, ref: 'Application' },
     leadSource: {
       type: String,
       enum: ['Website', 'Facebook', 'Walk-in', 'Phone', 'Other'],

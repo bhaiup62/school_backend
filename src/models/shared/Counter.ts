@@ -10,7 +10,7 @@ interface ICounterModel extends Model<ICounter> {
 }
 
 const CounterSchema = new Schema<ICounter>({
-  _id: { type: String, required: true },
+  _id: { type: String, required: true, alias: 'id' },
   seq: { type: Number, default: 0 },
 })
 

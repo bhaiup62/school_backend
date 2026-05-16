@@ -1,5 +1,6 @@
 import { Response } from 'express'
 import { AuthRequest } from '../../middleware/authMiddleware'
+import AcademicSession from '../../models/admin/AcademicSession'
 import Student from '../../models/student/Student'
 import { sseManager } from '../../lib/sseManager'
 import { canAccessClass, getTeacher } from './teacherHelpers'
@@ -17,6 +18,43 @@ export const markAttendance = async (req: AuthRequest, res: Response): Promise<v
       return
     }
 
+    const activeSession = await AcademicSession.findOne({ isCurrentSession: true }).select('attendanceBackdateLimit')
+    if (!activeSession) {
+      res.status(400).json({ success: false, message: 'No active academic session found.' })
+      return
+    }
+
+    const attendanceBackdateLimit =
+      typeof activeSession.attendanceBackdateLimit === 'number'
+        ? activeSession.attendanceBackdateLimit
+        : 2
+
+    const [yearStr, monthStr, dayStr] = date.split('-')
+    const attendanceDate = new Date(parseInt(yearStr), parseInt(monthStr) - 1, parseInt(dayStr))
+    if (Number.isNaN(attendanceDate.getTime())) {
+      res.status(400).json({ success: false, message: 'Invalid attendance date format. Use YYYY-MM-DD.' })
+      return
+    }
+
+    const today = new Date()
+    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+    const attendanceDateStart = new Date(
+      attendanceDate.getFullYear(),
+      attendanceDate.getMonth(),
+      attendanceDate.getDate()
+    )
+    const daysDifference = Math.floor(
+      (todayStart.getTime() - attendanceDateStart.getTime()) / (1000 * 60 * 60 * 24)
+    )
+
+    if (daysDifference > attendanceBackdateLimit) {
+      res.status(403).json({
+        success: false,
+        message: `Attendance cannot be backdated more than ${attendanceBackdateLimit} days.`,
+      })
+      return
+    }
+
     const validStatuses = ['present', 'absent', 'late', 'holiday']
     if (!validStatuses.includes(status)) {
       res.status(400).json({ success: false, message: `status must be one of: ${validStatuses.join(', ')}` })
@@ -31,8 +69,6 @@ export const markAttendance = async (req: AuthRequest, res: Response): Promise<v
       return
     }
 
-    const [yearStr, monthStr, dayStr] = date.split('-')
-    const attendanceDate = new Date(parseInt(yearStr), parseInt(monthStr) - 1, parseInt(dayStr))
     const month = attendanceDate.getMonth() + 1
     const year = attendanceDate.getFullYear()
 

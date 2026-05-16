@@ -1,6 +1,7 @@
 import { Response } from 'express'
 import { AuthRequest } from '../../../middleware/authMiddleware'
 import Application, { IApplication } from '../../../models/admin/Application'
+import AcademicSession from '../../../models/admin/AcademicSession'
 import ClassMaster from '../../../models/admin/ClassMaster'
 import { Counter } from '../../../models/shared/Counter'
 
@@ -8,6 +9,20 @@ type DocumentStatus = 'Verified' | 'Rejected'
 
 export const createApplication = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    const activeSession = await AcademicSession.findOne({ isCurrentSession: true })
+    if (!activeSession) {
+      res.status(400).json({ success: false, message: 'No active academic session found.' })
+      return
+    }
+
+    if (!activeSession.isAdmissionOpen) {
+      res.status(403).json({
+        success: false,
+        message: 'Admissions are currently closed for the active session.',
+      })
+      return
+    }
+
     const { academicSession, appliedClass, childData, parentData, payment, documents, assessment } = req.body
 
     const classMaster = await ClassMaster.findById(appliedClass)
@@ -61,7 +76,15 @@ export const createApplication = async (req: AuthRequest, res: Response): Promis
       return
     }
 
-    const applicationNumber = await Counter.getNextSequence('APP')
+    const counter = await Counter.findOneAndUpdate(
+      { id: 'application_number' },
+      { $inc: { seq: 1 } },
+      { new: true, upsert: true, translateAliases: true }
+    )
+    if (!counter) {
+      throw new Error('Failed to generate application number.')
+    }
+    const applicationNumber = `APP-${new Date().getFullYear()}-${counter.seq.toString().padStart(4, '0')}`
 
     const application = await Application.create({
       applicationNumber,

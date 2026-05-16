@@ -7,6 +7,7 @@ import {
   updateSessionStatus,
   addTermToSession,
   toggleAdmissionStatus,
+  rolloverSession,
 } from '../../controllers/admin/academics/academicSessionController'
 import {
   createEvent,
@@ -24,6 +25,7 @@ router.get('/sessions/:id', getSessionById)
 router.patch('/sessions/:id/status', updateSessionStatus)
 router.post('/sessions/:id/terms', addTermToSession)
 router.patch('/sessions/:id/admissions', toggleAdmissionStatus)
+router.post('/sessions/rollover', rolloverSession)
 
 router.post('/calendar/events', createEvent)
 router.get('/calendar/events/session/:sessionId', getEventsBySession)

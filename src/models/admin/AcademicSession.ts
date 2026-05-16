@@ -45,7 +45,37 @@ const academicSessionSchema = new Schema<IAcademicSession>(
     },
     isCurrentSession: { type: Boolean, default: false },
     isAdmissionOpen: { type: Boolean, default: false },
-    terms: { type: [termSchema], default: [] },
+    terms: {
+      type: [termSchema],
+      default: [],
+      validate: [
+        {
+          validator: function (terms: IAcademicTerm[]) {
+            return terms.filter((term) => term.isCurrentTerm).length <= 1
+          },
+          message: 'Only one term can be active.',
+        },
+        {
+          validator: function (this: IAcademicSession, terms: IAcademicTerm[]) {
+            const sessionStart = this.startDate
+            const sessionEnd = this.endDate
+
+            return terms.every((term) => {
+              const termStart = term.startDate
+              const termEnd = term.endDate
+
+              return (
+                termStart < termEnd &&
+                termStart >= sessionStart &&
+                termEnd <= sessionEnd
+              )
+            })
+          },
+          message:
+            'Each term must start before it ends and stay within the main session date range.',
+        },
+      ],
+    },
     attendanceBackdateLimit: { type: Number, required: true, default: 3 },
     marksEntryLockDate: { type: Date },
     minAttendancePercentage: { type: Number, required: true, default: 75 },
@@ -53,6 +83,14 @@ const academicSessionSchema = new Schema<IAcademicSession>(
   },
   { timestamps: true }
 )
+
+academicSessionSchema.pre('validate', function (next) {
+  if (this.startDate && this.endDate && this.startDate >= this.endDate) {
+    this.invalidate('startDate', 'Session startDate must be earlier than endDate.')
+  }
+
+  next()
+})
 
 academicSessionSchema.pre('save', function (next) {
   if (this.isModified('status')) {

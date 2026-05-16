@@ -58,9 +58,10 @@ export const getEnquiries = async (req: AuthRequest, res: Response): Promise<voi
 export const updateEnquiryStatus = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const enquiryId = req.params.id || req.params.enquiryId || req.body.enquiryId
-    const { status, followUpDate } = req.body as {
+    const { status, followUpDate, applicationId } = req.body as {
       status?: IEnquiry['status']
       followUpDate?: Date
+      applicationId?: string
     }
 
     if (!enquiryId || !status) {
@@ -71,13 +72,26 @@ export const updateEnquiryStatus = async (req: AuthRequest, res: Response): Prom
       return
     }
 
+    if (status === 'Converted' && !applicationId) {
+      res.status(400).json({
+        success: false,
+        message: 'An Application ID is required to mark an enquiry as Converted.',
+      })
+      return
+    }
+
     const updatePayload: {
       status: IEnquiry['status']
       followUpDate?: Date
+      applicationId?: string
     } = { status }
 
     if (followUpDate) {
       updatePayload.followUpDate = followUpDate
+    }
+
+    if (status === 'Converted' && applicationId) {
+      updatePayload.applicationId = applicationId
     }
 
     const enquiry = await Enquiry.findByIdAndUpdate(enquiryId, updatePayload, {
