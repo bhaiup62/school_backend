@@ -14,6 +14,10 @@ import {
   getEventsBySession,
   deleteEvent,
 } from '../../controllers/admin/academics/calendarController'
+import {
+  upsertClassTimetable,
+  getAdminClassTimetable,
+} from '../../controllers/admin/academics/timetableController'
 
 const router = Router()
 
@@ -30,5 +34,7 @@ router.post('/sessions/rollover', rolloverSession)
 router.post('/calendar/events', createEvent)
 router.get('/calendar/events/session/:sessionId', getEventsBySession)
 router.delete('/calendar/events/:id', deleteEvent)
+router.post('/timetable', upsertClassTimetable)
+router.get('/timetable/:classId', getAdminClassTimetable)
 
 export default router
