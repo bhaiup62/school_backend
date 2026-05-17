@@ -1,6 +1,9 @@
 import { Request, Response } from 'express'
 import { Timetable, ITimetable, IDaySchedule, IPeriod } from '../../models/principal/Timetable'
 import Teacher from '../../models/teacher/Teacher'
+import AcademicSession from '../../models/admin/AcademicSession'
+import ClassMaster from '../../models/admin/ClassMaster'
+import ClassSubjectMapping from '../../models/admin/ClassSubjectMapping'
 import { logAudit } from '../../models/shared/AuditLog'
 
 // Extended request with user info from JWT
@@ -10,6 +13,115 @@ interface AuthRequest extends Request {
     admissionNumber: string
     role: string
   }
+}
+
+const validateScheduleForSave = async (
+  cls: string,
+  academicYear: string,
+  schedule: IDaySchedule[],
+  excludeTimetableId?: string
+): Promise<{ status: number; message: string } | null> => {
+  const activeSession = await AcademicSession.findOne({ isCurrentSession: true }).select('_id')
+  if (!activeSession) {
+    return { status: 400, message: 'No active academic session found.' }
+  }
+
+  const classMaster = await ClassMaster.findOne({
+    className: cls,
+    academicSession: activeSession._id,
+    isDeleted: false,
+  }).select('_id')
+
+  if (!classMaster) {
+    return { status: 400, message: 'No subjects are mapped to this class yet.' }
+  }
+
+  const mappingDocs = await ClassSubjectMapping.find({
+    classId: classMaster._id,
+    academicSession: activeSession._id,
+    isDeleted: false,
+  })
+    .populate('subjectId', 'subjectName')
+    .populate('teachers', 'teacherId')
+
+  if (!mappingDocs.length) {
+    return { status: 400, message: 'No subjects are mapped to this class yet.' }
+  }
+
+  const allowedSubjectTeacherPairs = new Set<string>()
+  for (const mapping of mappingDocs as any[]) {
+    const subjectId = mapping.subjectId?._id ? String(mapping.subjectId._id) : ''
+    const subjectName = mapping.subjectId?.subjectName
+      ? String(mapping.subjectId.subjectName).trim().toLowerCase()
+      : ''
+    const teachers = Array.isArray(mapping.teachers) ? mapping.teachers : []
+
+    for (const teacher of teachers) {
+      const teacherCode = teacher?.teacherId ? String(teacher.teacherId).trim() : ''
+      if (!teacherCode) continue
+
+      if (subjectId) {
+        allowedSubjectTeacherPairs.add(`${subjectId}|${teacherCode}`)
+      }
+      if (subjectName) {
+        allowedSubjectTeacherPairs.add(`${subjectName}|${teacherCode}`)
+      }
+    }
+  }
+
+  for (const day of schedule) {
+    for (const period of day.periods) {
+      if (period.isBreak) continue
+
+      const teacherCode = String(period.teacherId || '').trim()
+      const periodWithSubjectId = period as IPeriod & { subjectId?: string }
+      const periodSubjectId = periodWithSubjectId.subjectId ? String(periodWithSubjectId.subjectId) : ''
+      const periodSubjectName = String(period.subject || '').trim().toLowerCase()
+
+      const isMapped =
+        (periodSubjectId && allowedSubjectTeacherPairs.has(`${periodSubjectId}|${teacherCode}`)) ||
+        (periodSubjectName && allowedSubjectTeacherPairs.has(`${periodSubjectName}|${teacherCode}`))
+
+      if (!isMapped) {
+        return {
+          status: 400,
+          message: 'Teacher is not mapped to teach this subject for this class.',
+        }
+      }
+
+      const collisionFilter: Record<string, unknown> = {
+        class: { $ne: cls },
+        academicYear,
+        isActive: true,
+        schedule: {
+          $elemMatch: {
+            day: day.day,
+            periods: {
+              $elemMatch: {
+                teacherId: teacherCode,
+                periodNumber: period.periodNumber,
+                isBreak: { $ne: true },
+              },
+            },
+          },
+        },
+      }
+
+      if (excludeTimetableId) {
+        collisionFilter._id = { $ne: excludeTimetableId }
+      }
+
+      const collision = await Timetable.findOne(collisionFilter).select('_id')
+      if (collision) {
+        return {
+          status: 409,
+          message: `Collision! Teacher is already booked in another class for Period ${period.periodNumber}.`,
+        }
+      }
+    }
+  }
+
+  return null
 }
 
 // GET /principal/timetables - Get all timetables
@@ -40,16 +152,32 @@ export const getAllTimetables = async (req: Request, res: Response) => {
 export const getTimetable = async (req: Request, res: Response) => {
   try {
     const { class: cls, section } = req.params
-    const { academicYear } = req.query
+    const activeSession = await AcademicSession.findOne({ isCurrentSession: true }).select('_id sessionName')
+    if (!activeSession) {
+      return res.status(400).json({
+        success: false,
+        message: 'No active academic session found.',
+      })
+    }
 
     const filter: Record<string, unknown> = {
       class: cls,
       section: section.toUpperCase(),
       isActive: true,
     }
-    if (academicYear) filter.academicYear = academicYear
+    if (Timetable.schema.path('academicSession')) {
+      filter.academicSession = activeSession._id
+    } else {
+      filter.academicYear = activeSession.sessionName
+    }
 
-    const timetable = await Timetable.findOne(filter).sort({ effectiveFrom: -1 })
+    const timetable = await Timetable.findOne(filter)
+      .sort({ effectiveFrom: -1 })
+      .populate({ path: 'classId', select: 'className', strictPopulate: false })
+      .populate({ path: 'periods.subjectId', select: 'subjectName', strictPopulate: false })
+      .populate({ path: 'schedule.periods.subjectId', select: 'subjectName', strictPopulate: false })
+      .populate({ path: 'periods.teacherId', select: 'firstName lastName employeeId', strictPopulate: false })
+      .populate({ path: 'schedule.periods.teacherId', select: 'firstName lastName employeeId', strictPopulate: false })
 
     if (!timetable) {
       return res.status(404).json({
@@ -93,6 +221,14 @@ export const createTimetable = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({
         success: false,
         message: 'Timetable already exists for this class/section/academic year. Please update instead.',
+      })
+    }
+
+    const validationError = await validateScheduleForSave(cls, academicYear, schedule as IDaySchedule[])
+    if (validationError) {
+      return res.status(validationError.status).json({
+        success: false,
+        message: validationError.message,
       })
     }
 
@@ -174,6 +310,19 @@ export const updateTimetable = async (req: AuthRequest, res: Response) => {
     }
 
     if (schedule) {
+      const validationError = await validateScheduleForSave(
+        timetable.class,
+        timetable.academicYear,
+        schedule as IDaySchedule[],
+        timetable._id.toString()
+      )
+      if (validationError) {
+        return res.status(validationError.status).json({
+          success: false,
+          message: validationError.message,
+        })
+      }
+
       // Validate teacher IDs exist
       const teacherIds = new Set<string>()
       for (const day of schedule as IDaySchedule[]) {
