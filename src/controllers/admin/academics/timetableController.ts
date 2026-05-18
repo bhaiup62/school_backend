@@ -23,16 +23,17 @@ const normalizeId = (value: unknown): string => {
 
 export const upsertClassTimetable = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { classId, dayOfWeek, periods } = req.body as {
+    const { classId, section, dayOfWeek, periods } = req.body as {
       classId?: string
+      section?: string
       dayOfWeek?: string
       periods?: IIncomingPeriod[]
     }
 
-    if (!classId || !dayOfWeek || !Array.isArray(periods)) {
+    if (!classId || !section || !dayOfWeek || !Array.isArray(periods)) {
       res.status(400).json({
         success: false,
-        message: 'classId, dayOfWeek, and periods are required.',
+        message: 'classId, section, dayOfWeek, and periods are required.',
       })
       return
     }
@@ -103,7 +104,7 @@ export const upsertClassTimetable = async (req: AuthRequest, res: Response): Pro
 
       const collision = await (Timetable as any).findOne({
         academicSession: activeSession._id,
-        classId: { $ne: classId },
+        $or: [{ classId: { $ne: classId } }, { section: { $ne: section } }],
         dayOfWeek,
         periods: {
           $elemMatch: {
@@ -126,12 +127,14 @@ export const upsertClassTimetable = async (req: AuthRequest, res: Response): Pro
       {
         academicSession: activeSession._id,
         classId,
+        section,
         dayOfWeek,
       },
       {
         $set: {
           academicSession: activeSession._id,
           classId,
+          section,
           dayOfWeek,
           periods,
           updatedBy: req.user?.admissionNumber,
@@ -160,9 +163,14 @@ export const upsertClassTimetable = async (req: AuthRequest, res: Response): Pro
 export const getAdminClassTimetable = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { classId } = req.params
+    const section = typeof req.query.section === 'string' ? req.query.section : ''
 
     if (!classId) {
       res.status(400).json({ success: false, message: 'classId is required.' })
+      return
+    }
+    if (!section) {
+      res.status(400).json({ success: false, message: 'section is required.' })
       return
     }
 
@@ -176,6 +184,7 @@ export const getAdminClassTimetable = async (req: AuthRequest, res: Response): P
       .find({
         academicSession: activeSession._id,
         classId,
+        section,
       })
       .populate({ path: 'periods.subjectId', select: 'subjectName', strictPopulate: false })
       .populate({ path: 'periods.teacherId', select: 'firstName lastName employeeId', strictPopulate: false })
