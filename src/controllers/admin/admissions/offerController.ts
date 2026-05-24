@@ -141,7 +141,6 @@ export const confirmAdmission = async (req: AuthRequest, res: Response): Promise
       }
 
       const admissionNumber = await getNextAdmissionNumber(dbSession)
-      const parentId = await getNextParentId(dbSession)
 
       const lastStudent = await Student.findOne({
         currentClass: classMaster.className,
@@ -219,30 +218,43 @@ export const confirmAdmission = async (req: AuthRequest, res: Response): Promise
       })
       await student.save({ session: dbSession })
 
-      const parentUser = new User({
-        admissionNumber: parentId,
-        password: 'parent123',
-        role: 'parent',
-        isActive: true,
-      })
-      await parentUser.save({ session: dbSession })
+      // ── ENTERPRISE SIBLING DETECTION ──
+      let parent = await Parent.findOne({ phone: parentData.phone }).session(dbSession)
 
-      const parent = new Parent({
-        user: parentUser._id,
-        parentId,
-        firstName: parentFirstName,
-        lastName: parentLastName,
-        phone: parentData.phone || '',
-        email: parentData.email || '',
-        occupation: parentData.occupation || '',
-        relation,
-        children: [admissionNumber],
-        isActive: true,
-      })
-      await parent.save({ session: dbSession })
+      if (parent) {
+        // Parent already exists (Sibling detected!), link new child to existing parent
+        parent.children.push(admissionNumber)
+        await parent.save({ session: dbSession })
+        createdParent = parent
+      } else {
+        // Completely New Parent, generate ID and User Account
+        const parentId = await getNextParentId(dbSession)
+        
+        const parentUser = new User({
+          admissionNumber: parentId,
+          password: 'parent123',
+          role: 'parent',
+          isActive: true,
+        })
+        await parentUser.save({ session: dbSession })
+
+        parent = new Parent({
+          user: parentUser._id,
+          parentId,
+          firstName: parentFirstName,
+          lastName: parentLastName,
+          phone: parentData.phone || '',
+          email: parentData.email || '',
+          occupation: parentData.occupation || '',
+          relation,
+          children: [admissionNumber],
+          isActive: true,
+        })
+        await parent.save({ session: dbSession })
+        createdParent = parent
+      }
 
       createdStudent = student
-      createdParent = parent
     })
 
     res.status(201).json({

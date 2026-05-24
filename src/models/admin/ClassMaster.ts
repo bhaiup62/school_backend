@@ -57,9 +57,20 @@ const classMasterSchema = new Schema<IClassMaster>(
 )
 
 classMasterSchema.pre('save', function (next) {
-  this.totalCapacity = this.sections.reduce((sum, section) => sum + section.capacity, 0)
+  // Only override capacity if sections have been added
+  if (this.sections && this.sections.length > 0) {
+    const calculatedCapacity = this.sections.reduce((sum, section) => sum + section.capacity, 0)
+    // Adjust available seats by the difference so we don't lose enrolled student counts
+    const capacityDifference = calculatedCapacity - this.totalCapacity
+    this.totalCapacity = calculatedCapacity
+    
+    if (!this.isNew) {
+      this.availableSeats = Math.max(this.availableSeats + capacityDifference, 0)
+    }
+  }
 
-  if (this.isNew) {
+  if (this.isNew && (!this.sections || this.sections.length === 0)) {
+    // Respect the manually entered capacity if no sections exist yet
     this.availableSeats = this.totalCapacity
   }
 

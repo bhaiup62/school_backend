@@ -5,8 +5,6 @@ import AcademicSession from '../../../models/admin/AcademicSession'
 import ClassMaster from '../../../models/admin/ClassMaster'
 import { Counter } from '../../../models/shared/Counter'
 
-type DocumentStatus = 'Verified' | 'Rejected'
-
 export const createApplication = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const activeSession = await AcademicSession.findOne({ isCurrentSession: true })
@@ -42,7 +40,7 @@ export const createApplication = async (req: AuthRequest, res: Response): Promis
       return
     }
 
-    // NEW FIX: Safely check if minimumAgeCutoffDate exists before comparing
+    // Safely check if minimumAgeCutoffDate exists before comparing
     if (classMaster.minimumAgeCutoffDate) {
       const cutoffDate = new Date(classMaster.minimumAgeCutoffDate)
       if (childDob > cutoffDate) {
@@ -76,15 +74,9 @@ export const createApplication = async (req: AuthRequest, res: Response): Promis
       return
     }
 
-    const counter = await Counter.findOneAndUpdate(
-      { id: 'application_number' },
-      { $inc: { seq: 1 } },
-      { new: true, upsert: true, translateAliases: true }
-    )
-    if (!counter) {
-      throw new Error('Failed to generate application number.')
-    }
-    const applicationNumber = `APP-${new Date().getFullYear()}-${counter.seq.toString().padStart(4, '0')}`
+    // ── CORRECT, SAFE COUNTER LOGIC ──
+    // This is safely inside the async function, so Node.js will not crash!
+    const applicationNumber = await (Counter as any).getNextSequence('APP')
 
     const application = await Application.create({
       applicationNumber,
@@ -195,7 +187,6 @@ export const updateDocumentStatus = async (req: AuthRequest, res: Response): Pro
       return
     }
 
-    // ── NEW: Handle the Manual Override Exception ──
     if (documentType === 'Manual Override') {
       application.pipelineStatus = 'Document Verified'
       await application.save()
@@ -207,7 +198,6 @@ export const updateDocumentStatus = async (req: AuthRequest, res: Response): Pro
       })
       return
     }
-    // ───────────────────────────────────────────────
 
     let targetIndex = -1
 
