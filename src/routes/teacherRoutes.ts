@@ -7,7 +7,7 @@ import { getMyStudents, getStudentDetail, addRemark, getRemarks } from '../contr
 import { markAttendance, markBulkAttendance, getAttendanceReport } from '../controllers/teacher/attendanceController'
 import { enterResult, getStudentResults } from '../controllers/teacher/resultsController'
 import { postNotice, getNotices, deleteNotice } from '../controllers/teacher/noticesController'
-import { submitLeaveRequest, getMyLeaveRequests } from '../controllers/teacher/leavesController'
+import { submitLeaveRequest, getMyLeaveRequests,getMyLeaveBalance } from '../controllers/teacher/leavesController'
 import { submitComplaint, getMyComplaints, getComplaintDetail, addComplaintComment } from '../controllers/teacher/complaintsController'
 import { getUpcomingEvents } from '../controllers/teacher/eventsController'
 
@@ -49,6 +49,7 @@ router.get('/events', getUpcomingEvents)
 // ── Leave Requests ───────────────────────────────────────
 router.post('/leave-request',  submitLeaveRequest)
 router.get ('/leave-requests', getMyLeaveRequests)
+router.get('/leave-balance', getMyLeaveBalance)
 
 // ── Complaints (submit to principal) ─────────────────────
 router.post('/complaints',                         submitComplaint)

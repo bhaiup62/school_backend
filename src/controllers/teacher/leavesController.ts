@@ -1,6 +1,8 @@
 import { Response } from 'express'
 import { AuthRequest } from '../../middleware/authMiddleware'
-import { LeaveRequest } from '../../models/teacher/LeaveRequest'
+import LeaveRequest from '../../models/leave/LeaveRequest'
+import LeaveBalance from '../../models/leave/LeaveBalance'
+import AcademicSession from '../../models/admin/AcademicSession'
 import { sseManager } from '../../lib/sseManager'
 import { getTeacher } from './teacherHelpers'
 
@@ -20,21 +22,61 @@ export const submitLeaveRequest = async (req: AuthRequest, res: Response): Promi
       return
     }
 
+    const normalizeLeaveType = (raw: string): 'Casual' | 'Sick' | 'Earned' | 'Maternity' | 'LWP' => {
+      const lower = raw.toLowerCase()
+      if (lower === 'other') return 'LWP'
+      if (lower === 'casual') return 'Casual'
+      if (lower === 'sick') return 'Sick'
+      if (lower === 'earned') return 'Earned'
+      if (lower === 'maternity') return 'Maternity'
+      if (lower === 'lwp') return 'LWP'
+      return (raw.charAt(0).toUpperCase() + raw.slice(1)) as any
+    }
+
+    const normalizedLeaveType = normalizeLeaveType(leaveType)
+    const totalDays =
+      Math.ceil((new Date(toDate).getTime() - new Date(fromDate).getTime()) / (1000 * 60 * 60 * 24)) + 1
+
+    const activeSession = await AcademicSession.findOne({ isCurrentSession: true }).select('_id')
+    if (!activeSession) {
+      res.status(400).json({ success: false, message: 'No active academic session found.' })
+      return
+    }
+
+    if (['Casual', 'Sick', 'Earned'].includes(normalizedLeaveType)) {
+      const balance = await LeaveBalance.findOne({
+        staffId: teacher.user,
+        academicSession: activeSession._id,
+      })
+
+      const balanceField =
+        normalizedLeaveType === 'Casual'
+          ? 'casualLeaves'
+          : normalizedLeaveType === 'Sick'
+            ? 'sickLeaves'
+            : 'earnedLeaves'
+
+      const total = (balance as any)?.[balanceField]?.total ?? 0
+      const used = (balance as any)?.[balanceField]?.used ?? 0
+      if (total - used < totalDays) {
+        res.status(400).json({ success: false, message: 'Insufficient leave balance for this request.' })
+        return
+      }
+    }
+
     const leaveRequest = await LeaveRequest.create({
-      requestorId: teacher.teacherId,
-      requestorName: `${teacher.firstName} ${teacher.lastName}`,
-      requestorRole: 'teacher',
-      department: teacher.subjects?.join(', ') || 'General',
-      leaveType,
-      fromDate: new Date(fromDate),
-      toDate: new Date(toDate),
+      staffId: teacher.user,
+      leaveType: normalizedLeaveType,
+      startDate: new Date(fromDate),
+      endDate: new Date(toDate),
+      totalDays,
       reason,
     })
 
     sseManager.broadcast('leave_request_submitted', {
       requestId: leaveRequest._id,
       teacherName: `${teacher.firstName} ${teacher.lastName}`,
-      leaveType,
+      leaveType: normalizedLeaveType,
       fromDate,
       toDate,
     }, 'principal')
@@ -60,7 +102,7 @@ export const getMyLeaveRequests = async (req: AuthRequest, res: Response): Promi
     }
 
     const { status, page = 1, limit = 20 } = req.query as any
-    const filter: Record<string, any> = { requestorId: teacher.teacherId }
+    const filter: Record<string, any> = { staffId: teacher.user }
     if (status) filter.status = status
 
     const skip = (parseInt(page) - 1) * parseInt(limit)
@@ -83,6 +125,45 @@ export const getMyLeaveRequests = async (req: AuthRequest, res: Response): Promi
     })
   } catch (err: any) {
     console.error('getMyLeaveRequests error:', err)
+    res.status(500).json({ success: false, message: 'Server error.' })
+  }
+}
+
+export const getMyLeaveBalance = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const teacher = await getTeacher(req.user!.admissionNumber)
+    if (!teacher) {
+      res.status(404).json({ success: false, message: 'Teacher not found.' })
+      return
+    }
+
+    const activeSession = await AcademicSession.findOne({ isCurrentSession: true }).select('_id')
+    if (!activeSession) {
+      res.status(400).json({ success: false, message: 'No active academic session found.' })
+      return
+    }
+
+    let balance = await LeaveBalance.findOne({
+      staffId: teacher.user,
+      academicSession: activeSession._id,
+    })
+    if (!balance) {
+      balance = await LeaveBalance.create({
+        staffId: teacher.user,
+        academicSession: activeSession._id,
+        casualLeaves: { total: 12, used: 0 },
+        sickLeaves: { total: 10, used: 0 },
+        earnedLeaves: { total: 15, used: 0 },
+      })
+    }
+
+    res.status(200).json({
+      success: true,
+      data: balance,
+      message: 'Leave balance fetched successfully.',
+    })
+  } catch (err: any) {
+    console.error('getMyLeaveBalance error:', err)
     res.status(500).json({ success: false, message: 'Server error.' })
   }
 }

@@ -21,6 +21,8 @@ import academicRoutes from './routes/admin/academicRoutes'
 import classSubjectRoutes from './routes/admin/classSubjectRoutes'
 import staffRoutes from './routes/admin/staffRoutes'
 import examRoutes from './routes/admin/examRoutes'
+import studentAdminRoutes from './routes/admin/studentRoutes'
+import leaveAdminRoutes from './routes/admin/leaveRoutes'
 import { errorHandler, notFound } from './middleware/errorMiddleware'
 
 
@@ -81,7 +83,8 @@ app.use('/api/admin/academics', academicRoutes)
 app.use('/api/admin/academics', classSubjectRoutes)
 app.use('/api/admin/staff', staffRoutes)
 app.use('/api/admin/exams', examRoutes)
- // This handles /api/admin/admissions/setup/...
+app.use('/api/admin/students', studentAdminRoutes)
+app.use('/api/admin/leaves', leaveAdminRoutes)  // This handles /api/admin/leaves/...
 app.use('/api/events',       sseRoutes)     // ← SSE real-time stream
 
 // Error handling
